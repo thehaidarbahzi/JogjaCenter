@@ -42,11 +42,6 @@ Route::middleware(["auth:sanctum", "role:superadmin"])->group(function () {
                 PreferenceController::class,
                 "show",
             ]);
-
-            Route::post("/superset", [SupersetController::class, "add"]);
-            Route::put("/superset", [SupersetController::class, "update"]);
-            Route::delete("/superset", [SupersetController::class, "delete"]);
-            Route::get("/superset/{id?}", [SupersetController::class, "show"]);
         });
 
         Route::prefix("dashboard")->group(function () {
@@ -58,6 +53,18 @@ Route::middleware(["auth:sanctum", "role:superadmin"])->group(function () {
 Route::middleware(["auth:sanctum", "role:superadmin|admin"])->group(
     function () {
         Route::prefix("app")->group(function () {
+            Route::prefix("dashboard")->group(function () {
+                Route::post("/superset", [SupersetController::class, "add"]);
+                Route::put("/superset", [SupersetController::class, "update"]);
+                Route::delete("/superset", [
+                    SupersetController::class,
+                    "delete",
+                ]);
+                Route::get("/superset/{id?}", [
+                    SupersetController::class,
+                    "show",
+                ]);
+            });
             Route::prefix("dashboard")->group(function () {
                 Route::put("/menu", [MenuController::class, "update"]);
                 Route::delete("/menu", [MenuController::class, "delete"]);
