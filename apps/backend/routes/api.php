@@ -1,7 +1,8 @@
 <?php
 
-use App\Http\Controllers\AssignRoleController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\MenuContentController;
+use App\Http\Controllers\MenuController;
 use App\Http\Controllers\PreferenceController;
 use App\Http\Controllers\SupersetController;
 use App\Http\Controllers\UserController;
@@ -47,5 +48,35 @@ Route::middleware(["auth:sanctum", "role:superadmin"])->group(function () {
             Route::delete("/superset", [SupersetController::class, "delete"]);
             Route::get("/superset/{id?}", [SupersetController::class, "show"]);
         });
+
+        Route::prefix("dashboard")->group(function () {
+            Route::post("/menu", [MenuController::class, "add"]);
+        });
     });
 });
+
+Route::middleware(["auth:sanctum", "role:superadmin|admin"])->group(
+    function () {
+        Route::prefix("app")->group(function () {
+            Route::prefix("dashboard")->group(function () {
+                Route::put("/menu", [MenuController::class, "update"]);
+                Route::delete("/menu", [MenuController::class, "delete"]);
+                Route::get("/menu/{id?}", [MenuController::class, "show"]);
+
+                Route::post("/content", [MenuContentController::class, "add"]);
+                Route::delete("/content", [
+                    MenuContentController::class,
+                    "delete",
+                ]);
+                Route::get("/content/{id?}", [
+                    MenuContentController::class,
+                    "show",
+                ]);
+                Route::put("/content", [
+                    MenuContentController::class,
+                    "update",
+                ]);
+            });
+        });
+    },
+);
