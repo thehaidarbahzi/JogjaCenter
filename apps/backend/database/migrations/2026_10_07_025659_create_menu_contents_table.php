@@ -15,11 +15,12 @@ return new class extends Migration {
             $table->string("name");
             $table->text("description");
             $table->string("superset_id", 36);
-            $table->integer("menu_id");
+            $table
+                ->foreignId("menu_id")
+                ->constrained("menus")
+                ->restrictOnDelete();
             $table->enum("visibility", ["public", "private", "off"]);
             $table->timestamps();
-
-            $table->foreign("menu_id")->references("id")->on("menus");
         });
     }
 
