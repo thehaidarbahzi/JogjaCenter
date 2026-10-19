@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MenuContentController;
 use App\Http\Controllers\MenuController;
@@ -9,7 +10,7 @@ use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix("auth")->group(function () {
-    Route::post("/login", [AuthController::class, "login"])->name("login");
+    Route::post("/login", [AuthController::class, "login"]);
     Route::post("/request-reset", [AuthController::class, "generateReset"]);
     Route::post("/validate-reset", [AuthController::class, "validateReset"]);
     Route::post("/reset", [AuthController::class, "resetUser"]);
@@ -54,6 +55,11 @@ Route::middleware(["auth:sanctum", "role:superadmin|admin"])->group(
     function () {
         Route::prefix("app")->group(function () {
             Route::prefix("dashboard")->group(function () {
+                Route::get("/logs/{id?}", [
+                    ActivityController::class,
+                    "show",
+                ]);
+
                 Route::post("/superset", [SupersetController::class, "add"]);
                 Route::put("/superset", [SupersetController::class, "update"]);
                 Route::delete("/superset", [

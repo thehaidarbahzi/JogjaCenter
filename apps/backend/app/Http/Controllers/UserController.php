@@ -6,6 +6,7 @@ use App\Mail\UserInvite;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -70,18 +71,25 @@ class UserController extends Controller
 
         $user = User::where("email", $invitation->email)->first();
 
-        if ($user) {
-            $user->roles()->attach($invitation->role_id);
-            $invitation->update(["accepted_at" => CarbonImmutable::now()]);
-        } else {
+        if (!$user) {
             $user = User::create([
                 "email" => $invitation->email,
                 "password" => str()->random(16),
             ]);
-
-            $user->roles()->attach($invitation->role_id);
-            $invitation->update(["accepted_at" => CarbonImmutable::now()]);
         }
+
+        UserRole::create([
+            "user_id" => (int) $user->id,
+            "role_id" => (int) $invitation->role_id,
+        ]);
+
+        $invitation->update(["accepted_at" => CarbonImmutable::now()]);
+
+        activity("invitations")
+            ->causedBy($user)
+            ->performedOn($invitation)
+            ->withProperties(["user_id" => (int) $user->id])
+            ->log("User accepted the invitation and joined the system");
 
         return response()->json(
             ["message" => "Invitation accepted. You can now login."],
