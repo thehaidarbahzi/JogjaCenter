@@ -126,6 +126,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'openapi' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/openapi.log'),
+            'level' => env('LOG_OPENAPI_LEVEL', 'debug'),
+            'max_files' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

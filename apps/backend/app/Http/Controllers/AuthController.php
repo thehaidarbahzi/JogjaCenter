@@ -21,6 +21,8 @@ class AuthController extends Controller
         ]);
 
         if (Auth::attempt($credentials)) {
+            activity("auth")->causedBy(Auth::user())->log("User logged into the system");
+
             $token = Auth::user()->createToken("api");
 
             return response()->json(
@@ -40,6 +42,8 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()?->delete();
+
+        activity("auth")->causedBy($request->user())->log("User logged out from the system");
 
         return response()->json(["message" => "Logged out"], Response::HTTP_OK);
     }
@@ -78,6 +82,11 @@ class AuthController extends Controller
 
             Mail::to($findEmail->email)->queue(new ResetPassword($code));
 
+            activity("auth")
+                ->causedBy($findEmail)
+                ->withProperties(["email" => $findEmail->email])
+                ->log("User requested a password reset");
+
             return response()->json(
                 ["token" => $token],
                 Response::HTTP_CREATED,
@@ -85,7 +94,9 @@ class AuthController extends Controller
         }
 
         return response()->json(
-            ["message" => "Your email does not registered."],
+            [
+                "message" => "Your email does not registered.",
+            ],
             Response::HTTP_NOT_FOUND,
         );
     }
@@ -112,6 +123,16 @@ class AuthController extends Controller
                 ->update([
                     "token" => $token,
                 ]);
+
+            $validReset = UserReset::where([
+                "id" => $credentials["id"],
+                "code" => (int) $credentials["code"],
+            ])
+                ->where("expire_at", ">", CarbonImmutable::now())
+                ->first();
+            activity("auth")
+                ->causedBy($validReset ? User::find($validReset->user_id) : null)
+                ->log("User validated the password reset code");
 
             return response()->json(
                 [
@@ -156,7 +177,9 @@ class AuthController extends Controller
 
         if (!$checkReset) {
             return response()->json(
-                ["message" => "Your password reset request is invalid."],
+                [
+                    "message" => "Your password reset request is invalid.",
+                ],
                 Response::HTTP_NOT_FOUND,
             );
         }
@@ -165,7 +188,9 @@ class AuthController extends Controller
 
         if (!$user) {
             return response()->json(
-                ["message" => "Your password reset request is invalid."],
+                [
+                    "message" => "Your password reset request is invalid.",
+                ],
                 Response::HTTP_NOT_FOUND,
             );
         }
@@ -173,6 +198,11 @@ class AuthController extends Controller
         $user->password = $credentials["password"];
         $user->save();
         $checkReset->delete();
+
+        activity("auth")
+            ->causedBy($user)
+            ->withProperties(["user_id" => (int) $checkReset->user_id])
+            ->log("User successfully reset their password");
 
         return response()->json(
             [
