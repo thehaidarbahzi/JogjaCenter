@@ -43,7 +43,11 @@ class UserController extends Controller
             "expire_at" => $expire,
         ]);
 
-        Mail::to($validation["email"])->queue(new UserInvite($id));
+        $something = Mail::to($validation["email"])->queue(new UserInvite($id))->render();
+
+        if (!$something) {
+
+        }
 
         return response()->json(
             ["message" => "Invitation has been sent."],

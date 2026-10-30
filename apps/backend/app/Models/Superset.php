@@ -22,12 +22,12 @@ class Superset extends Model
             ->logExcept(["password"])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+                return match($eventName) {
                     'created' => 'Create Superset',
                     'updated' => 'Update Superset',
                     'deleted' => 'Delete Superset',
-                    default => $activity->description,
+                    default => $eventName,
                 };
             });
     }
