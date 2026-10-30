@@ -36,13 +36,14 @@ class User extends Authenticatable
             ->logExcept(["password"])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+
+                return match($eventName) {
                     'created' => 'Create User',
                     'updated' => 'Update User',
                     'deleted' => 'Delete User',
-                    default => $activity->description,
-                };
+                    default => $eventName,    };
+
             });
     }
 }

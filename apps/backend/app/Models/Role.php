@@ -21,13 +21,14 @@ class Role extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+
+                return match($eventName) {
                     'created' => 'Create Role',
                     'updated' => 'Update Role',
                     'deleted' => 'Delete Role',
-                    default => $activity->description,
-                };
+                    default => $eventName,    };
+
             });
     }
 }

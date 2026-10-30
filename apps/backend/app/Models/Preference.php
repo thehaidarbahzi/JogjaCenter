@@ -21,13 +21,14 @@ class Preference extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+
+                return match($eventName) {
                     'created' => 'Create Preference',
                     'updated' => 'Update Preference',
                     'deleted' => 'Delete Preference',
-                    default => $activity->description,
-                };
+                    default => $eventName,    };
+
             });
     }
 }

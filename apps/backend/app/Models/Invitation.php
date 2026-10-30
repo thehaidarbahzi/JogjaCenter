@@ -29,12 +29,12 @@ class Invitation extends Model
             ->logExcept(["id"])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+                return match($eventName) {
                     'created' => 'Create Invitation',
                     'updated' => 'Update Invitation',
                     'deleted' => 'Delete Invitation',
-                    default => $activity->description,
+                    default => $eventName,
                 };
             });
     }

@@ -27,13 +27,14 @@ class MenuContent extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+
+                return match($eventName) {
                     'created' => 'Create Menu Content',
                     'updated' => 'Update Menu Content',
                     'deleted' => 'Delete Menu Content',
-                    default => $activity->description,
-                };
+                    default => $eventName,    };
+
             });
     }
 }

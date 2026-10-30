@@ -22,13 +22,14 @@ class UserReset extends Model
             ->logExcept(["id", "token", "code"])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->tap(function($activity) {
-                $activity->description = match($activity->event) {
+            ->setDescriptionForEvent(function(string $eventName): string {
+
+                return match($eventName) {
                     'created' => 'Create User Reset',
                     'updated' => 'Update User Reset',
                     'deleted' => 'Delete User Reset',
-                    default => $activity->description,
-                };
+                    default => $eventName,    };
+
             });
     }
 }
