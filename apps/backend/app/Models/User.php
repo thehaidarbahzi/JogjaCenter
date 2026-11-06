@@ -15,7 +15,7 @@ class User extends Authenticatable
 {
     use HasApiTokens, LogsActivity, SoftDeletes;
 
-    protected $fillable = ["email", "fullname", "password"];
+    protected $fillable = ["email", "username", "fullname", "password"];
 
     protected $hidden = ["password"];
 
@@ -36,14 +36,13 @@ class User extends Authenticatable
             ->logExcept(["password"])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->setDescriptionForEvent(function(string $eventName): string {
-
-                return match($eventName) {
-                    'created' => 'Create User',
-                    'updated' => 'Update User',
-                    'deleted' => 'Delete User',
-                    default => $eventName,    };
-
+            ->setDescriptionForEvent(function (string $eventName): string {
+                return match ($eventName) {
+                    "created" => "Create User",
+                    "updated" => "Update User",
+                    "deleted" => "Delete User",
+                    default => $eventName,
+                };
             });
     }
 }

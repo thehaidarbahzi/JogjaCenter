@@ -13,7 +13,13 @@ class MenuContent extends Model
 {
     use LogsActivity;
 
-    protected $fillable = ["name", "description", "superset_id", "visibility"];
+    protected $fillable = [
+        "menu_id",
+        "name",
+        "description",
+        "superset_id",
+        "visibility",
+    ];
 
     public function menu(): BelongsTo
     {
@@ -27,14 +33,13 @@ class MenuContent extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
-            ->setDescriptionForEvent(function(string $eventName): string {
-
-                return match($eventName) {
-                    'created' => 'Create Menu Content',
-                    'updated' => 'Update Menu Content',
-                    'deleted' => 'Delete Menu Content',
-                    default => $eventName,    };
-
+            ->setDescriptionForEvent(function (string $eventName): string {
+                return match ($eventName) {
+                    "created" => "Create Menu Content",
+                    "updated" => "Update Menu Content",
+                    "deleted" => "Delete Menu Content",
+                    default => $eventName,
+                };
             });
     }
 }

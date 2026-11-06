@@ -11,8 +11,8 @@ class MenuController extends Controller
     public function add(Request $request)
     {
         $validation = $request->validate([
-            "name" => ["required", "string"],
-            "description" => ["required", "string"],
+            "name" => ["required", "string", "max:100"],
+            "description" => ["required", "string", "max:1000"],
             "visibility" => ["required", "in:public,private,off"],
         ]);
 

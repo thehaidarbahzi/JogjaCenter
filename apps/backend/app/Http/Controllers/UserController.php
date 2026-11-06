@@ -10,6 +10,8 @@ use App\Models\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Symfony\Component\HttpFoundation\Response;
 
 class UserController extends Controller
@@ -43,11 +45,7 @@ class UserController extends Controller
             "expire_at" => $expire,
         ]);
 
-        $something = Mail::to($validation["email"])->queue(new UserInvite($id))->render();
-
-        if (!$something) {
-
-        }
+        Mail::to($validation["email"])->queue(new UserInvite($id))->render();
 
         return response()->json(
             ["message" => "Invitation has been sent."],
@@ -55,14 +53,50 @@ class UserController extends Controller
         );
     }
 
-    public function acceptInvitation(Request $request, string $invitationId)
+    public function validateInvitation(Request $request)
     {
-        // TODO: ngikut FE
         $validation = $request->validate([
-            "id" => ["required", "email", "disposable_email"],
+            "id" => ["required", "string"],
         ]);
 
-        $invitation = Invitation::where("id", $invitationId)
+        $invitation = Invitation::where("id", $validation["id"])
+            ->where("expire_at", ">", CarbonImmutable::now())
+            ->first();
+
+        if (!$invitation) {
+            return response()->json(
+                ["message" => "Invitation is invalid or expired."],
+                Response::HTTP_NOT_FOUND,
+            );
+        }
+
+        return response()->json(
+            ["message" => "Invitation accepted. You can now create account."],
+            Response::HTTP_OK,
+        );
+    }
+
+    public function acceptInvitation(Request $request)
+    {
+        $validation = $request->validate([
+            "id" => ["required", "string"],
+            "fullname" => ["required", "string", "max:100"],
+            "username" => [
+                "required",
+                "string",
+                "min:5",
+                "max:30",
+                Rule::unique("users", "username")->withoutTrashed(),
+            ],
+            "password" => [
+                "required",
+                "confirmed",
+                "string",
+                Password::min(8)->mixedCase()->numbers(),
+            ], // tambahan body password_confirmation
+        ]);
+
+        $invitation = Invitation::where("id", $validation["id"])
             ->where("expire_at", ">", CarbonImmutable::now())
             ->first();
 
@@ -75,12 +109,19 @@ class UserController extends Controller
 
         $user = User::where("email", $invitation->email)->first();
 
-        if (!$user) {
-            $user = User::create([
-                "email" => $invitation->email,
-                "password" => str()->random(16),
-            ]);
+        if ($user) {
+            return response()->json(
+                ["message" => "User aleady exists."],
+                Response::HTTP_CONFLICT,
+            );
         }
+
+        $user = User::create([
+            "username" => $validation["username"],
+            "fullname" => $validation["fullname"],
+            "email" => $invitation->email,
+            "password" => $validation["password"],
+        ]);
 
         UserRole::create([
             "user_id" => (int) $user->id,

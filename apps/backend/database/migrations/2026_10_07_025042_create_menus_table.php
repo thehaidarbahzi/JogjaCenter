@@ -12,7 +12,7 @@ return new class extends Migration {
     {
         Schema::create("menus", function (Blueprint $table) {
             $table->id();
-            $table->string("name");
+            $table->string("name", 100);
             $table->text("description");
             $table->enum("visibility", ["public", "private", "off"]);
             $table->timestampsTz();

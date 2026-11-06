@@ -3,8 +3,22 @@ info:
   title: JogjaCenter Backend API
   version: 1.0.0
   description: |-
-    Full HTTP API for authentication, user management, system preferences, and dashboard configuration.
+    Full HTTP API for authentication, user management, system preferences,
+    dashboard menus, menu content, Superset connections, and audit logs.
     All endpoints are served under `/api` and return JSON.
+
+    Authentication uses Laravel Sanctum bearer tokens. Public endpoints do not
+    require a token. Role-restricted endpoints require one of the following:
+
+    - `superadmin`: `/app/user/invite`, `/app/setting/preference*`, and
+      `POST /app/dashboard/menu`
+    - `superadmin` or `admin`: the remaining `/app/dashboard/*` endpoints
+      (`menu`, `menu/{id}`, `content`, `content/{id}`, `superset`,
+      `superset/{id}`, `logs`, `logs/{id}`)
+    - Any authenticated user: `/auth/logout`
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 servers:
   - url: /api
     description: Current host
@@ -32,23 +46,30 @@ paths:
     post:
       tags: [Authentication]
       operationId: login
-      summary: Log in and create an API token
+      summary: Log in with email or username and create an API token
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [password]
+              anyOf:
+                - required: [email]
+                - required: [username]
               properties:
                 email:
                   type: string
                   format: email
                   example: user@example.com
+                username:
+                  type: string
+                  example: budibudi
                 password:
                   type: string
                   format: password
-                  example: "password123"
+                  example: "Password123"
       responses:
         "200":
           description: Login succeeded
@@ -62,7 +83,7 @@ paths:
                     type: string
                     description: Plain text Sanctum API token.
         "401":
-          description: Email or password is incorrect
+          description: Email/username or password is incorrect
           content:
             application/json:
               schema:
@@ -92,6 +113,7 @@ paths:
       tags: [Password Recovery]
       operationId: requestPasswordReset
       summary: Request a password reset email
+      security: []
       requestBody:
         required: true
         content:
@@ -105,7 +127,7 @@ paths:
                   format: email
                   example: user@example.com
                 id:
-                  type: string
+                  type: [string, "null"]
                   minLength: 64
                   maxLength: 64
                   description: Optional ID from an earlier reset request.
@@ -121,13 +143,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [token]
-                properties:
-                  token:
-                    type: string
-                    minLength: 64
-                    maxLength: 64
+                $ref: "#/components/schemas/Token"
         "404":
           description: No registered user with this email
           content:
@@ -142,6 +158,7 @@ paths:
       tags: [Password Recovery]
       operationId: validatePasswordReset
       summary: Validate the code from the reset email
+      security: []
       requestBody:
         required: true
         content:
@@ -156,6 +173,8 @@ paths:
                   maxLength: 64
                 code:
                   type: string
+                  minLength: 9
+                  maxLength: 9
                   pattern: '^\d{9}$'
                   example: "123456789"
       responses:
@@ -164,13 +183,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [token]
-                properties:
-                  token:
-                    type: string
-                    minLength: 64
-                    maxLength: 64
+                $ref: "#/components/schemas/Token"
         "404":
           description: Reset request or code is invalid/expired
           content:
@@ -184,7 +197,7 @@ paths:
     post:
       tags: [Password Recovery]
       operationId: resetPassword
-      summary: Set a new password
+      summary: Set a new password using the reset token
       security:
         - resetBearer: []
       requestBody:
@@ -218,11 +231,12 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
-  /auth/register/invitation:
+  /auth/register/validate:
     post:
       tags: [User Management]
-      operationId: acceptInvitation
-      summary: Accept a user invitation
+      operationId: validateInvitation
+      summary: Validate an invitation ID before registration
+      security: []
       requestBody:
         required: true
         content:
@@ -233,16 +247,72 @@ paths:
               properties:
                 id:
                   type: string
-                  description: The email address used for the invitation.
+                  description: Invitation ID from the invitation link.
       responses:
         "200":
-          description: Invitation accepted
+          description: Invitation is valid
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
         "404":
           description: Invitation invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /auth/register:
+    post:
+      tags: [User Management]
+      operationId: acceptInvitation
+      summary: Accept an invitation and create the user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, fullname, username, password, password_confirmation]
+              properties:
+                id:
+                  type: string
+                  description: Invitation ID from the invitation link.
+                fullname:
+                  type: string
+                  maxLength: 100
+                username:
+                  type: string
+                  minLength: 5
+                  maxLength: 30
+                  description: Must be unique among non-deleted users.
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  description: Must contain at least one uppercase letter, one lowercase letter, and one number.
+                password_confirmation:
+                  type: string
+                  format: password
+                  description: Must match `password`.
+      responses:
+        "200":
+          description: Invitation accepted and account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
+          description: Invitation invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "409":
+          description: A user with this email already exists
           content:
             application/json:
               schema:
@@ -269,10 +339,13 @@ paths:
                 email:
                   type: string
                   format: email
+                  description: Disposable email addresses are rejected.
                 role:
                   type: integer
+                  description: Existing role ID.
                 inviter:
                   type: integer
+                  description: Existing user ID of the inviter.
       responses:
         "200":
           description: Invitation sent
@@ -280,18 +353,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
-          description: Invitation request invalid
+          description: Invitation request invalid (role or inviter not found)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin role required
         "422":
           $ref: "#/components/responses/ValidationError"
 
   /app/setting/preference:
+    get:
+      tags: [System Settings]
+      operationId: listPreferences
+      summary: List all preferences
+      security:
+        - sanctumBearer: []
+      responses:
+        "200":
+          description: Preferences retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Preference"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
     post:
       tags: [System Settings]
       operationId: addPreference
@@ -304,29 +402,62 @@ paths:
           application/json:
             schema:
               type: object
-              required: [key, value]
+              required: [key, value, type]
               properties:
                 key:
                   type: string
+                  maxLength: 255
                 value:
                   type: string
+                  description: Text value. Use multipart/form-data with a file when type is image.
+                type:
+                  type: string
+                  enum: ["text", "image"]
+          multipart/form-data:
+            schema:
+              type: object
+              required: [key, value, type]
+              properties:
+                key:
+                  type: string
+                  maxLength: 255
+                value:
+                  type: string
+                  format: binary
+                  description: |-
+                    Image file when type is image. Rules depend on the key:
+                    keys containing `favicon` accept ICO/PNG up to 512 KB;
+                    keys containing `logo` accept PNG/JPG/JPEG up to 2 MB;
+                    keys containing `home`, `photo`, or `foto` accept JPG/JPEG/PNG up to 5 MB;
+                    all other keys accept PNG/JPG/JPEG/WebP up to 5 MB.
+                    Images are converted to WebP (favicons are stored as-is).
+                type:
+                  type: string
+                  enum: ["text", "image"]
       responses:
         "200":
           description: Preference added
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Message"
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: "#/components/schemas/Preference"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           description: Preference already exists
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin role required
         "422":
-          $ref: "#/components/responses/ValidationError"
+          $ref: "#/components/responses/UnprocessableEntity"
 
     put:
       tags: [System Settings]
@@ -343,28 +474,65 @@ paths:
               required: [id]
               properties:
                 id:
-                  type: string
+                  type: integer
                 key:
                   type: string
+                  maxLength: 255
                 value:
                   type: string
+                  description: Text value. Use multipart/form-data with a file when the preference type is image.
+                type:
+                  type: string
+                  enum: ["text", "image"]
+              description: Send one or more of `key`, `value`, or `type` to change the preference. Changing `type` requires a matching `value`.
+          multipart/form-data:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: integer
+                key:
+                  type: string
+                  maxLength: 255
+                value:
+                  type: string
+                  format: binary
+                  description: |-
+                    Replacement image file when the preference type is image. Rules depend on the key:
+                    keys containing `favicon` accept ICO/PNG up to 512 KB;
+                    keys containing `logo` accept PNG/JPG/JPEG up to 2 MB;
+                    keys containing `home`, `photo`, or `foto` accept JPG/JPEG/PNG up to 5 MB;
+                    all other keys accept PNG/JPG/JPEG/WebP up to 5 MB.
+                    Images are converted to WebP (favicons are stored as-is).
+                type:
+                  type: string
+                  enum: ["text", "image"]
+              description: Send one or more of `key`, `value`, or `type` to change the preference. Changing `type` requires a matching `value`. Sending a file requires type to be image (or the preference to already be an image).
       responses:
         "200":
           description: Preference updated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Message"
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: "#/components/schemas/Preference"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Preference not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin role required
         "422":
-          $ref: "#/components/responses/ValidationError"
+          $ref: "#/components/responses/UnprocessableEntity"
 
     delete:
       tags: [System Settings]
@@ -381,7 +549,7 @@ paths:
               required: [id]
               properties:
                 id:
-                  type: string
+                  type: integer
       responses:
         "200":
           description: Preference deleted
@@ -389,49 +557,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Preference not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /app/setting/preference/{id}:
     get:
       tags: [System Settings]
       operationId: showPreference
-      summary: Get a preference by ID or list all
+      summary: Get a preference by ID
       security:
         - sanctumBearer: []
       parameters:
         - name: id
           in: path
-          required: false
+          required: true
           schema:
             type: string
       responses:
         "200":
-          description: Preference(s) retrieved
+          description: Preference retrieved
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/Preference"
-                  - type: array
-                    items:
-                      $ref: "#/components/schemas/Preference"
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Preference"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Preference not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin role required
 
   /app/dashboard/menu:
+    get:
+      tags: [Dashboard Menu]
+      operationId: listMenus
+      summary: List all menus
+      security:
+        - sanctumBearer: []
+      responses:
+        "200":
+          description: Menus retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Menu"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
     post:
       tags: [Dashboard Menu]
       operationId: addMenu
@@ -448,11 +644,13 @@ paths:
               properties:
                 name:
                   type: string
+                  maxLength: 100
                 description:
                   type: string
+                  maxLength: 1000
                 visibility:
                   type: string
-                  enum: [public, private, off]
+                  enum: ["public", "private", "off"]
       responses:
         "200":
           description: Menu added
@@ -460,8 +658,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: Forbidden - Superadmin role required
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -487,7 +687,8 @@ paths:
                   type: string
                 visibility:
                   type: string
-                  enum: [public, private, off]
+                  enum: ["public", "private", "off"]
+              description: At least one of `name`, `description`, or `visibility` must be provided.
       responses:
         "200":
           description: Menu updated
@@ -495,14 +696,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Menu not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
       tags: [Dashboard Menu]
@@ -527,49 +732,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Menu not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /app/dashboard/menu/{id}:
     get:
       tags: [Dashboard Menu]
       operationId: showMenu
-      summary: Get a menu by ID or list all
+      summary: Get a menu by ID
       security:
         - sanctumBearer: []
       parameters:
         - name: id
           in: path
-          required: false
+          required: true
           schema:
             type: string
       responses:
         "200":
-          description: Menu(s) retrieved
+          description: Menu retrieved
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/Menu"
-                  - type: array
-                    items:
-                      $ref: "#/components/schemas/Menu"
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Menu"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Menu not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
 
   /app/dashboard/content:
+    get:
+      tags: [Menu Content]
+      operationId: listMenuContents
+      summary: List all menu content items
+      security:
+        - sanctumBearer: []
+      responses:
+        "200":
+          description: Menu content retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MenuContent"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
     post:
       tags: [Menu Content]
       operationId: addMenuContent
@@ -586,16 +819,21 @@ paths:
               properties:
                 name:
                   type: string
+                  maxLength: 255
                 description:
                   type: string
+                  maxLength: 1000
                 superset_id:
                   type: string
-                  format: uuid
+                  minLength: 36
+                  maxLength: 36
+                  description: Superset dashboard identifier (36 characters).
                 menu_id:
                   type: integer
+                  description: Existing menu ID.
                 visibility:
                   type: string
-                  enum: [public, private, off]
+                  enum: ["public", "private", "off"]
       responses:
         "200":
           description: Content added
@@ -603,8 +841,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: Forbidden - Superadmin|Admin role required
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -626,16 +866,19 @@ paths:
                   type: string
                 name:
                   type: string
+                  maxLength: 255
                 description:
                   type: string
                 superset_id:
                   type: string
-                  format: uuid
+                  minLength: 36
+                  maxLength: 36
                 menu_id:
                   type: integer
                 visibility:
                   type: string
-                  enum: [public, private, off]
+                  enum: ["public", "private", "off"]
+              description: At least one of `name`, `description`, `superset_id`, `menu_id`, or `visibility` must be provided.
       responses:
         "200":
           description: Content updated
@@ -643,14 +886,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Content not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
       tags: [Menu Content]
@@ -675,26 +922,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Content not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /app/dashboard/content/{id}:
     get:
       tags: [Menu Content]
       operationId: showMenuContent
-      summary: Get content by ID or list all
+      summary: Get a menu content item by ID
       security:
         - sanctumBearer: []
       parameters:
         - name: id
           in: path
-          required: false
+          required: true
           schema:
             type: string
       responses:
@@ -703,21 +954,45 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/MenuContent"
-                  - type: array
-                    items:
-                      $ref: "#/components/schemas/MenuContent"
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/MenuContent"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Content not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
 
   /app/dashboard/superset:
+    get:
+      tags: [Superset]
+      operationId: listSupersets
+      summary: List all Superset connections
+      security:
+        - sanctumBearer: []
+      responses:
+        "200":
+          description: Superset connections retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Superset"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
     post:
       tags: [Superset]
       operationId: addSuperset
@@ -738,6 +1013,7 @@ paths:
                   type: string
                 password:
                   type: string
+                  format: password
       responses:
         "200":
           description: Superset added
@@ -745,8 +1021,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: Forbidden - Superadmin|Admin role required
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -772,6 +1050,8 @@ paths:
                   type: string
                 password:
                   type: string
+                  format: password
+              description: At least one of `host`, `username`, or `password` must be provided.
       responses:
         "200":
           description: Superset updated
@@ -779,14 +1059,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Superset not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
       tags: [Superset]
@@ -811,61 +1095,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Superset not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /app/dashboard/superset/{id}:
     get:
       tags: [Superset]
       operationId: showSuperset
-      summary: Get a Superset by ID or list all
+      summary: Get a Superset connection by ID
       security:
         - sanctumBearer: []
       parameters:
         - name: id
           in: path
-          required: false
+          required: true
           schema:
             type: string
       responses:
         "200":
-          description: Superset(s) retrieved
+          description: Superset retrieved
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/Superset"
-                  - type: array
-                    items:
-                      $ref: "#/components/schemas/Superset"
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Superset"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Superset not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
 
-  /app/dashboard/logs/{id}:
+  /app/dashboard/logs:
     get:
       tags: [Audit Logs]
-      operationId: showLogs
-      summary: Get a log by ID or list logs with filters
+      operationId: listActivityLogs
+      summary: List activity logs with optional filters
       security:
         - sanctumBearer: []
       parameters:
-        - name: id
-          in: path
-          required: false
-          schema:
-            type: string
         - name: log_name
           in: query
           schema:
@@ -905,29 +1189,63 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/Activity"
-                  - type: object
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Activity"
+                  meta:
+                    type: object
                     properties:
-                      data:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/Activity"
-                      meta:
-                        type: object
-                        properties:
-                          current_page: { type: integer }
-                          per_page: { type: integer }
-                          total: { type: integer }
-                          last_page: { type: integer }
+                      current_page:
+                        type: integer
+                      per_page:
+                        type: integer
+                      total:
+                        type: integer
+                      last_page:
+                        type: integer
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /app/dashboard/logs/{id}:
+    get:
+      tags: [Audit Logs]
+      operationId: showActivityLog
+      summary: Get a single activity log by ID
+      security:
+        - sanctumBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Activity"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Activity log not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
-        "403":
-          description: Forbidden - Superadmin|Admin role required
 
 components:
   securitySchemes:
@@ -950,6 +1268,15 @@ components:
         message:
           type: string
 
+    Token:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 64
+          maxLength: 64
+
     ValidationError:
       type: object
       required: [message, errors]
@@ -967,45 +1294,122 @@ components:
     Preference:
       type: object
       properties:
-        id: { type: string }
-        key: { type: string }
-        value: { type: string }
+        id:
+          type: integer
+        key:
+          type: string
+        value:
+          type: string
+          description: Text value, or the relative storage path for image preferences.
+        type:
+          type: string
+          enum: ["text", "image"]
+        url:
+          type: [string, "null"]
+          description: Public URL for image preferences; null for text preferences.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     Menu:
       type: object
       properties:
-        id: { type: string }
-        name: { type: string }
-        description: { type: string }
-        visibility: { type: string, enum: [public, private, off] }
+        id:
+          type: integer
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+        visibility:
+          type: string
+          enum: ["public", "private", "off"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     MenuContent:
       type: object
       properties:
-        id: { type: string }
-        name: { type: string }
-        description: { type: string }
-        superset_id: { type: string, format: uuid }
-        menu_id: { type: integer }
-        visibility: { type: string, enum: [public, private, off] }
+        id:
+          type: integer
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        superset_id:
+          type: string
+          minLength: 36
+          maxLength: 36
+        menu_id:
+          type: integer
+        visibility:
+          type: string
+          enum: ["public", "private", "off"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     Superset:
       type: object
       properties:
-        id: { type: string }
-        host: { type: string }
-        username: { type: string }
-        password: { type: string }
+        id:
+          type: integer
+        host:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+          description: Superset password as stored and returned by the current implementation.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     Activity:
       type: object
       properties:
-        id: { type: string }
-        log_name: { type: string }
-        event: { type: string }
-        causer_id: { type: integer }
-        subject_type: { type: string }
-        created_at: { type: string, format: date-time }
+        id:
+          type: integer
+        log_name:
+          type: [string, "null"]
+        description:
+          type: string
+        subject_type:
+          type: [string, "null"]
+        subject_id:
+          type: [integer, string, "null"]
+        causer_type:
+          type: [string, "null"]
+        causer_id:
+          type: [integer, string, "null"]
+        attribute_changes:
+          type: [object, "null"]
+          additionalProperties: true
+        properties:
+          type: [object, "null"]
+          additionalProperties: true
+        event:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
   responses:
     ValidationError:
@@ -1014,9 +1418,27 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ValidationError"
+    UnprocessableEntity:
+      description: Request could not be processed (validation failure or image processing error)
+      content:
+        application/json:
+          schema:
+            anyOf:
+              - $ref: "#/components/schemas/ValidationError"
+              - $ref: "#/components/schemas/Message"
     Unauthenticated:
       description: Missing or invalid Sanctum API token
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Message"
+          example:
+            message: Unauthenticated.
+    Forbidden:
+      description: Authenticated user does not have the required role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Message"
+          example:
+            message: "Forbidden: Insufficient permissions"
