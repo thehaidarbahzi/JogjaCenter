@@ -16,12 +16,15 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $credentials = $request->validate([
-            "email" => ["required", "email"],
-            "password" => ["required"],
+            "email" => ["required_without:username", "email"],
+            "username" => ["required_without:email", "string"],
+            "password" => ["required", "string"],
         ]);
 
         if (Auth::attempt($credentials)) {
-            activity("auth")->causedBy(Auth::user())->log("User logged into the system");
+            activity("auth")
+                ->causedBy(Auth::user())
+                ->log("User logged into the system");
 
             $token = Auth::user()->createToken("api");
 
@@ -43,7 +46,9 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()?->delete();
 
-        activity("auth")->causedBy($request->user())->log("User logged out from the system");
+        activity("auth")
+            ->causedBy($request->user())
+            ->log("User logged out from the system");
 
         return response()->json(["message" => "Logged out"], Response::HTTP_OK);
     }
@@ -131,7 +136,9 @@ class AuthController extends Controller
                 ->where("expire_at", ">", CarbonImmutable::now())
                 ->first();
             activity("auth")
-                ->causedBy($validReset ? User::find($validReset->user_id) : null)
+                ->causedBy(
+                    $validReset ? User::find($validReset->user_id) : null,
+                )
                 ->log("User validated the password reset code");
 
             return response()->json(

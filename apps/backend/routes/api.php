@@ -14,10 +14,11 @@ Route::prefix("auth")->group(function () {
     Route::post("/request-reset", [AuthController::class, "generateReset"]);
     Route::post("/validate-reset", [AuthController::class, "validateReset"]);
     Route::post("/reset", [AuthController::class, "resetUser"]);
-    Route::post("/register/invitation", [
+    Route::post("/register/validate", [
         UserController::class,
-        "acceptInvitation",
+        "validateInvitation",
     ]);
+    Route::post("/register", [UserController::class, "acceptInvitation"]);
 });
 
 Route::middleware("auth:sanctum")->group(function () {
@@ -55,10 +56,7 @@ Route::middleware(["auth:sanctum", "role:superadmin|admin"])->group(
     function () {
         Route::prefix("app")->group(function () {
             Route::prefix("dashboard")->group(function () {
-                Route::get("/logs/{id?}", [
-                    ActivityController::class,
-                    "show",
-                ]);
+                Route::get("/logs/{id?}", [ActivityController::class, "show"]);
 
                 Route::post("/superset", [SupersetController::class, "add"]);
                 Route::put("/superset", [SupersetController::class, "update"]);

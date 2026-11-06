@@ -12,7 +12,7 @@ class MenuContentController extends Controller
     {
         $validation = $request->validate([
             "name" => ["required", "string", "max:255"],
-            "description" => ["required", "string"],
+            "description" => ["required", "string", "max:1000"],
             "superset_id" => ["required", "string", "size:36"],
             "menu_id" => ["required", "integer", "exists:menus,id"],
             "visibility" => ["required", "in:public,private,off"],
